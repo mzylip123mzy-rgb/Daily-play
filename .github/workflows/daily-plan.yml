@@ -1,0 +1,26 @@
+name: Daily Study Plan
+
+on:
+  schedule:
+    - cron: '30 23 * * *'
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run daily plan sender
+        shell: pwsh
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          PUSHPLUS_SECRET_KEY: ${{ secrets.PUSHPLUS_SECRET_KEY }}
+          PUSHPLUS_ENDPOINT: ${{ secrets.PUSHPLUS_ENDPOINT }}
+          PUSHPLUS_CHANNEL: ${{ secrets.PUSHPLUS_CHANNEL }}
+        run: |
+          $result = & .\work\Send-DailyPlan.ps1
+          $result
+
