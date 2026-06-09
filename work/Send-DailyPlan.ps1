@@ -16,6 +16,70 @@ function Invoke-JsonPostUtf8($Uri, $Payload, $Headers = @{}) {
   Invoke-RestMethod -Uri $Uri -Method Post -ContentType 'application/json;charset=utf-8' -Headers $Headers -Body $bytes
 }
 
+function Upload-Image($Path) {
+  $uploadErrors = @()
+
+  try {
+    Add-Type -AssemblyName System.Net.Http
+    $client = [System.Net.Http.HttpClient]::new()
+    $form = [System.Net.Http.MultipartFormDataContent]::new()
+    $fileBytes = [System.IO.File]::ReadAllBytes($Path)
+    $fileContent = [System.Net.Http.ByteArrayContent]::new($fileBytes)
+    $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('image/png')
+    $form.Add($fileContent, 'file', [System.IO.Path]::GetFileName($Path))
+
+    $uploadMessage = $client.PostAsync('http://tmpfiles.org/api/v1/upload', $form).GetAwaiter().GetResult()
+    $uploadText = $uploadMessage.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+    if ($uploadMessage.IsSuccessStatusCode) {
+      $uploadResp = $uploadText | ConvertFrom-Json
+      if ($uploadResp.status -eq 'success' -and $uploadResp.data.url) {
+        $uploadedUri = [Uri]$uploadResp.data.url
+        return '{0}://{1}/dl{2}' -f $uploadedUri.Scheme, $uploadedUri.Host, $uploadedUri.AbsolutePath
+      }
+    }
+    $uploadErrors += "tmpfiles.org: $uploadText"
+  } catch {
+    $uploadErrors += "tmpfiles.org: $($_.Exception.Message)"
+  }
+
+  try {
+    $curlOut = & curl.exe -sS -F ('file=@{0}' -f $Path) http://0x0.st 2>$null
+    $imageSrc = ($curlOut | Select-Object -First 1).Trim()
+    if ($imageSrc -match '^https?://') {
+      return $imageSrc
+    }
+    $uploadErrors += "0x0.st: $curlOut"
+  } catch {
+    $uploadErrors += "0x0.st: $($_.Exception.Message)"
+  }
+
+  throw "image upload failed: $($uploadErrors -join ' | ')"
+}
+
+function Publish-ImageToRepo($Path) {
+  if (-not $env:GITHUB_REPOSITORY) {
+    return $null
+  }
+  if (-not $env:GITHUB_TOKEN) {
+    return $null
+  }
+
+  $root = Split-Path -Parent $PSScriptRoot
+  $relativePath = [System.IO.Path]::GetRelativePath($root, $Path).Replace('\', '/')
+  $branch = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { 'main' }
+
+  git -C $root config user.name 'github-actions[bot]' | Out-Null
+  git -C $root config user.email 'github-actions[bot]@users.noreply.github.com' | Out-Null
+  git -C $root add $relativePath | Out-Null
+  $status = git -C $root status --porcelain -- $relativePath
+  if ($status) {
+    git -C $root commit -m "Update daily study plan image" | Out-Null
+    git -C $root push origin HEAD:$branch | Out-Null
+  }
+
+  return "https://raw.githubusercontent.com/$($env:GITHUB_REPOSITORY)/$branch/$relativePath"
+}
+
 if (-not (Test-Path -LiteralPath $generator)) {
   throw "Daily plan image generator is missing: $generator"
 }
@@ -36,25 +100,13 @@ if (-not $token) { throw 'PushPlus token is missing.' }
 if (-not $secretKey) { throw 'PushPlus secretKey is missing.' }
 if (-not $endpoint) { throw 'PushPlus endpoint is missing.' }
 
-Add-Type -AssemblyName System.Net.Http
-$client = [System.Net.Http.HttpClient]::new()
-$form = [System.Net.Http.MultipartFormDataContent]::new()
-$fileBytes = [System.IO.File]::ReadAllBytes($outPath)
-$fileContent = [System.Net.Http.ByteArrayContent]::new($fileBytes)
-$fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('image/png')
-$form.Add($fileContent, 'file', [System.IO.Path]::GetFileName($outPath))
-
-$uploadMessage = $client.PostAsync('https://tmpfiles.org/api/v1/upload', $form).GetAwaiter().GetResult()
-$uploadText = $uploadMessage.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-if (-not $uploadMessage.IsSuccessStatusCode) {
-  throw "image upload failed with HTTP $([int]$uploadMessage.StatusCode)"
+$imageSrc = $null
+if ($env:PUBLISH_IMAGE_TO_REPO -eq '1') {
+  $imageSrc = Publish-ImageToRepo $outPath
 }
-$uploadResp = $uploadText | ConvertFrom-Json
-if ($uploadResp.status -ne 'success' -or -not $uploadResp.data.url) {
-  throw "image upload failed: $uploadText"
+if (-not $imageSrc) {
+  $imageSrc = Upload-Image $outPath
 }
-$uploadedUri = [Uri]$uploadResp.data.url
-$imageSrc = '{0}://{1}/dl{2}' -f $uploadedUri.Scheme, $uploadedUri.Host, $uploadedUri.AbsolutePath
 
 $dateText = '{0:yyyy-MM-dd}' -f $Date
 $content = @"

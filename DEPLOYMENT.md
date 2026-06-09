@@ -27,6 +27,6 @@ Add these secrets in GitHub:
 
 ## Notes
 
-- The workflow uploads the generated PNG to `tmpfiles.org` and embeds that public URL in the PushPlus HTML message.
-- If you want a stricter hosting option later, the upload step can be swapped to your own object storage bucket.
-
+- The workflow now publishes the generated PNG back to the repository and uses the GitHub raw URL in the PushPlus HTML message.
+- This keeps the whole automation cloud-hosted and avoids dependence on third-party image upload services.
+- The workflow needs `contents: write` so it can push the generated image file back to the repo.

@@ -16,6 +16,5 @@ Required repository secrets:
 Notes:
 
 - The workflow runs on `windows-latest` because the image generator uses `System.Drawing`.
-- The script uploads the PNG to a public image host and inserts that URL into the PushPlus HTML message.
+- In GitHub Actions, the script pushes the generated PNG back to the repository and uses the GitHub raw URL in the PushPlus HTML message.
 - You can run it manually from the GitHub Actions tab with `workflow_dispatch`.
-
