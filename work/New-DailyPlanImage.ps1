@@ -11,6 +11,10 @@ if (-not $OutPath) {
   $OutPath = Join-Path $root 'outputs'
   $OutPath = Join-Path $OutPath ('{0:yyyy-MM-dd}-daily-plan-cute.png' -f $Date)
 }
+$outDir = Split-Path -Parent $OutPath
+if ($outDir -and -not (Test-Path -LiteralPath $outDir)) {
+  New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+}
 
 function New-Brush($color) {
   [System.Drawing.SolidBrush]::new($color)
