@@ -70,14 +70,14 @@ function Publish-ImageToRepo($Path) {
 
   git -C $root config user.name 'github-actions[bot]' | Out-Null
   git -C $root config user.email 'github-actions[bot]@users.noreply.github.com' | Out-Null
-  git -C $root add $relativePath | Out-Null
+  git -C $root add -f $relativePath | Out-Null
   $status = git -C $root status --porcelain -- $relativePath
   if ($status) {
     git -C $root commit -m "Update daily study plan image" | Out-Null
     git -C $root push origin HEAD:$branch | Out-Null
   }
 
-  return "https://raw.githubusercontent.com/$($env:GITHUB_REPOSITORY)/$branch/$relativePath"
+  return "https://cdn.jsdelivr.net/gh/$($env:GITHUB_REPOSITORY)@$branch/$relativePath"
 }
 
 if (-not (Test-Path -LiteralPath $generator)) {
