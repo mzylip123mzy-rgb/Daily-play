@@ -113,6 +113,7 @@ $content = @"
 <div style="font-family:Arial,'Microsoft YaHei',sans-serif;line-height:1.6;">
   <h2>$dateText 每日计划</h2>
   <p><img src="$imageSrc" style="max-width:100%;height:auto;" /></p>
+  <p><a href="$imageSrc">打开每日计划图片</a></p>
 </div>
 "@
 
