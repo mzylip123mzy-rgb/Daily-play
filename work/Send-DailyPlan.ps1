@@ -1,5 +1,5 @@
 ﻿param(
-  [datetime]$Date = (Get-Date).Date
+  [datetime]$Date = ([System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([datetime]::UtcNow, 'China Standard Time').Date)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,6 +9,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $generator = Join-Path $root 'work\New-DailyPlanImage.ps1'
 $configPath = if ($env:PUSHPLUS_CONFIG_PATH) { $env:PUSHPLUS_CONFIG_PATH } else { Join-Path $root 'pushplus-config.json' }
 $outPath = Join-Path $root ('outputs\{0:yyyy-MM-dd}-daily-plan-cute.png' -f $Date)
+$sentMarkerPath = Join-Path $root ('sent\{0:yyyy-MM-dd}.sent' -f $Date)
 
 function Invoke-JsonPostUtf8($Uri, $Payload, $Headers = @{}) {
   $json = $Payload | ConvertTo-Json -Depth 12 -Compress
@@ -80,9 +81,49 @@ function Publish-ImageToRepo($Path) {
   return "https://cdn.jsdelivr.net/gh/$($env:GITHUB_REPOSITORY)@$branch/$relativePath"
 }
 
+function Publish-SentMarkerToRepo($Path, $DateText) {
+  if (-not $env:GITHUB_REPOSITORY) {
+    return
+  }
+  if (-not $env:GITHUB_TOKEN) {
+    return
+  }
+
+  $root = Split-Path -Parent $PSScriptRoot
+  $markerDir = Split-Path -Parent $Path
+  if ($markerDir -and -not (Test-Path -LiteralPath $markerDir)) {
+    New-Item -ItemType Directory -Force -Path $markerDir | Out-Null
+  }
+  Set-Content -LiteralPath $Path -Value ("Sent $DateText at {0:u}" -f (Get-Date)) -Encoding UTF8
+
+  $relativePath = [System.IO.Path]::GetRelativePath($root, $Path).Replace('\', '/')
+  $branch = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { 'main' }
+
+  git -C $root config user.name 'github-actions[bot]' | Out-Null
+  git -C $root config user.email 'github-actions[bot]@users.noreply.github.com' | Out-Null
+  git -C $root add -f $relativePath | Out-Null
+  $status = git -C $root status --porcelain -- $relativePath
+  if ($status) {
+    git -C $root commit -m "Mark daily study plan sent" | Out-Null
+    git -C $root push origin HEAD:$branch | Out-Null
+  }
+}
+
 if (-not (Test-Path -LiteralPath $generator)) {
   throw "Daily plan image generator is missing: $generator"
 }
+
+if ($env:PUBLISH_IMAGE_TO_REPO -eq '1' -and (Test-Path -LiteralPath $sentMarkerPath)) {
+  $dateText = '{0:yyyy-MM-dd}' -f $Date
+  [pscustomobject]@{
+    Sent = $false
+    Skipped = $true
+    Date = $dateText
+    Reason = 'Already sent'
+  } | ConvertTo-Json -Depth 4
+  exit 0
+}
+
 & powershell -NoProfile -ExecutionPolicy Bypass -File $generator -Date $Date -OutPath $outPath | Out-Null
 if (-not (Test-Path -LiteralPath $outPath)) {
   throw "Daily plan image was not created: $outPath"
@@ -127,6 +168,8 @@ $sendResp = Invoke-JsonPostUtf8 -Uri $endpoint -Payload ([ordered]@{
 if ($sendResp.code -ne 200) {
   throw "send failed: code=$($sendResp.code), msg=$($sendResp.msg)"
 }
+
+Publish-SentMarkerToRepo $sentMarkerPath $dateText
 
 [pscustomobject]@{
   Sent = $true

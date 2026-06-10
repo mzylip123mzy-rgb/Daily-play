@@ -10,8 +10,12 @@ on:
       - '.github/workflows/daily-plan.yml'
       - 'work/*.ps1'
   schedule:
-    - cron: '20 23 * * *'
+    - cron: '5,20,35,50 23 * * *'
   workflow_dispatch:
+
+concurrency:
+  group: daily-study-plan-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   send:
